@@ -1,0 +1,18 @@
+services:
+  launch-qa:
+    build: .
+    image: launch-qa:latest
+    container_name: launch-qa
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    # Lighthouse + Chromium use shared memory; the default 64MB is too small.
+    shm_size: "1gb"
+    # Resource hints for a small Droplet
+    deploy:
+      resources:
+        limits:
+          memory: 1500M
