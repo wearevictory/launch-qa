@@ -214,8 +214,12 @@ async function seoChecks(page: Page): Promise<Finding[]> {
     const meta = (n: string) =>
       (document.querySelector(`meta[name="${n}"]`) as HTMLMetaElement | null)
         ?.content;
+ // OpenGraph: spec says property="og:..." but plenty of CMSes (Yoast, etc.)
+    // emit name="og:..." instead. Accept either.
     const ogMeta = (p: string) =>
       (document.querySelector(`meta[property="${p}"]`) as HTMLMetaElement | null)
+        ?.content
+      ?? (document.querySelector(`meta[name="${p}"]`) as HTMLMetaElement | null)
         ?.content;
     return {
       title: document.title,
@@ -766,7 +770,20 @@ async function linkChecks(page: Page): Promise<Finding[]> {
     }
   }
 
-  // Sample-check up to 30 unique http(s) links for status
+// Sample-check up to 30 unique http(s) links for status.
+  // Send realistic browser headers — without them, sites with bot protection
+  // (Cloudflare, Akamai, big publishers) return 403 to anything that looks
+  // automated. 401/403/429 are treated as "couldn't verify" rather than broken.
+  const BROWSER_HEADERS = {
+    "User-Agent":
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Accept":
+      "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+  };
+  const BOT_BLOCK_STATUSES = new Set([401, 403, 429]);
+
   const uniqueHrefs = [
     ...new Set(
       links.map(l => l.href).filter(h => /^https?:\/\//i.test(h)),
@@ -783,20 +800,26 @@ async function linkChecks(page: Page): Promise<Finding[]> {
           method: "HEAD",
           redirect: "follow",
           signal: ctrl.signal,
+          headers: BROWSER_HEADERS,
         });
         clearTimeout(t);
+        // 405 = method not allowed; many servers reject HEAD even when GET works.
+        // For other 4xx/5xx, retry with GET to confirm.
         if (!resp.ok && resp.status !== 405) {
-          // Some servers reject HEAD; retry with GET
           const ctrl2 = new AbortController();
           const t2 = setTimeout(() => ctrl2.abort(), 8000);
           resp = await fetch(href, {
             method: "GET",
             redirect: "follow",
             signal: ctrl2.signal,
+            headers: BROWSER_HEADERS,
           });
           clearTimeout(t2);
         }
-        if (!resp.ok) broken.push({ href, status: resp.status });
+        // Skip statuses that almost certainly mean bot-blocking, not actual brokenness.
+        if (!resp.ok && !BOT_BLOCK_STATUSES.has(resp.status)) {
+          broken.push({ href, status: resp.status });
+        }
       } catch (e: unknown) {
         const name = (e as { name?: string })?.name;
         broken.push({ href, status: name === "AbortError" ? "timeout" : "error" });
