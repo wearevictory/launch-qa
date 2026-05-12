@@ -1,7 +1,7 @@
 # Multi-stage Dockerfile for Launch QA Assistant.
 # Base: official Playwright image — Chromium + system deps preinstalled.
 
-ARG PLAYWRIGHT_VERSION=1.48.0
+ARG PLAYWRIGHT_VERSION=1.59.1
 
 # ---- deps ----
 FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-jammy AS deps
