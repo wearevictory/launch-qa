@@ -121,6 +121,12 @@ export async function runScan(
 
     onProgress?.(80, "Running accessibility scan");
     findings.push(...(await safeStep(() => axeChecks(page))));
+
+    onProgress?.(82, "Checking analytics");
+    findings.push(...(await safeStep(() => analyticsCheck(page))));
+
+    onProgress?.(85, "Running favicon check");
+    findings.push(...(await safeStep(() => faviconCheck(page))));
   } finally {
     await browser.close().catch(() => undefined);
   }
@@ -1027,4 +1033,85 @@ async function runLighthouse(
   } finally {
     await chrome.kill().catch(() => undefined);
   }
+}
+
+/* -------------------------------------------------------------- */
+/* Favicon check                                                  */
+/* -------------------------------------------------------------- */
+
+async function faviconCheck(page: Page): Promise<Finding[]> {
+  const out: Finding[] = [];
+
+  const data = await page.evaluate(() => {
+    const icons = Array.from(
+      document.querySelectorAll('link[rel~="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"]')
+    ) as HTMLLinkElement[];
+    return {
+      count: icons.length,
+      hasAppleTouch: icons.some(i => i.rel.includes("apple-touch-icon")),
+      sample: icons.slice(0, 3).map(i => ({ rel: i.rel, href: i.href })),
+    };
+  });
+
+  if (data.count === 0) {
+    out.push(mkFinding(
+      "SEO", "med",
+      "No favicon detected",
+      "No <link rel=\"icon\">, \"shortcut icon\", or \"apple-touch-icon\" tags found. Tabs and bookmarks will fall back to a generic browser icon.",
+      "Add at minimum a <link rel=\"icon\" href=\"/favicon.ico\"> and a 180x180 apple-touch-icon for iOS.",
+      "favicon",
+    ));
+  } else if (!data.hasAppleTouch) {
+    out.push(mkFinding(
+      "SEO", "low",
+      "Missing apple-touch-icon",
+      "Favicon exists but no apple-touch-icon. iOS users adding to home screen will get a generic icon.",
+      "Add <link rel=\"apple-touch-icon\" sizes=\"180x180\" href=\"/apple-touch-icon.png\">.",
+      "favicon",
+    ));
+  }
+
+  return out;
+}
+
+/* -------------------------------------------------------------- */
+/* Analytics check                                                */
+/* -------------------------------------------------------------- */
+async function analyticsCheck(page: Page): Promise<Finding[]> {
+  const out: Finding[] = [];
+
+  const trackers = await page.evaluate(() => ({
+    gtm:    !!document.querySelector('script[src*="googletagmanager.com"]'),
+    ga4:    !!(window as any).gtag,
+    meta:   !!(window as any).fbq,
+    hotjar: !!(window as any).hj,
+    // Add whatever else you care about — Segment, Mixpanel, LinkedIn, TikTok, etc.
+    segment: !!(window as any).analytics,
+    linkedin: !!(window as any)._linkedin_partner_id,
+  }));
+
+  const presentTrackers = Object.entries(trackers)
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+
+  if (presentTrackers.length === 0) {
+    out.push(mkFinding(
+      "SEO", "med",
+      "No analytics detected",
+      "Couldn't find GTM, GA4, Meta pixel, Hotjar, or Segment. Most agency launches need at least one analytics tag wired up before go-live.",
+      "Add the client's analytics — typically GTM as a container, with GA4 + Meta pixel inside.",
+      "analytics",
+    ));
+  } else {
+    // Optional: surface what we DID find as a low-severity informational finding
+    out.push(mkFinding(
+      "SEO", "low",
+      `Analytics: ${presentTrackers.join(", ")} detected`,
+      `Found tracking for: ${presentTrackers.join(", ")}. Verify with the client that this matches their expected stack.`,
+      "Cross-check against the client's analytics requirements doc.",
+      "analytics",
+    ));
+  }
+
+  return out;
 }

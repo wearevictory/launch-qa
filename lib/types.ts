@@ -6,8 +6,8 @@ export type Category =
   | "Links"
   | "Mobile"
   | "CopyBrand"
-  | "Performance";
-
+  | "Performance"
+  | "Analytics";
 export interface Finding {
   id: string;
   category: Category;
@@ -57,4 +57,5 @@ export const CATEGORY_META: Record<Category, { label: string; blurb: string }> =
   Mobile:        { label: "Mobile QA",      blurb: "Responsive layout & touch" },
   CopyBrand:     { label: "Copy & Brand",   blurb: "Voice, claims, and consistency" },
   Performance:   { label: "Performance",    blurb: "Weight, scripts, and loading" },
+  Analytics: { label: "Analytics",  blurb: "Tracking, consent, attribution" },
 };
